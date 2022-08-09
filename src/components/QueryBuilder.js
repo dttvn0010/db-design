@@ -1,5 +1,6 @@
 import QueryModal from "modals/QueryModal";
 import { useSliceSelector, useSliceStore, deepCopy } from 'utils/reduxHelper';
+import { getTableRoutes } from "utils/tableRouter";
 
 function isComplexCondition(cond) {
   return (
@@ -10,13 +11,17 @@ function isComplexCondition(cond) {
 }
 
 function Condition({condition, index, setCondition, addCondition, deleteCondition, disableAddDelete}) {
-  let [tableList] = useSliceSelector('app', ['tableList']);
+  let [targetTable, tableList] = useSliceSelector('app', ['targetTable', 'tableList']);
   tableList = tableList ?? [];
 
+  let tableRoutes = getTableRoutes(targetTable, tableList);
+  
   let tableMap = {};
-  tableList.forEach(table => {
-    tableMap[table.name] = table;
+  Object.keys(tableRoutes).forEach(tableName => {
+    tableMap[tableName] = tableList.find(t => t.name === tableName);
   });
+
+  let linkedTables = Object.values(tableMap);
 
   function setChildCondition(subIndex, data){
     condition = deepCopy(condition);
@@ -69,7 +74,7 @@ function Condition({condition, index, setCondition, addCondition, deleteConditio
                   onChange={e => setCondition(index, {tableName: e.target.value})}
                 >
                   <option>--Table--</option>
-                  {tableList.map(table =>
+                  {linkedTables.map(table =>
                     <option key={table.name} value={table.name}>
                       {table.name}
                     </option>
@@ -255,7 +260,7 @@ export default function QueryBuilder(){
           <label className="mb-1">Target table:</label>
           <select className="form-control"
             value={targetTable ?? ''}
-            onChange={e => store.setState({targetTable: e.target.value})}
+            onChange={e => store.setState({conditionList:[], targetTable: e.target.value})}
           >
             <option value=''>----</option>
             {tableList.map((table,index) => 

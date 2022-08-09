@@ -1,6 +1,7 @@
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import { Modal } from 'react-bootstrap';
 import { useSliceSelector, useSliceStore } from '../utils/reduxHelper';
+import { getTableRoutes } from "utils/tableRouter";
 
 function isValidCondition(condition) {
   const cond = condition.cond;
@@ -30,7 +31,7 @@ function isValidCondition(condition) {
   }
 }
 
-function genCondition(targetTable, condition, indent) {
+function genCondition(targetTable, tableRoutes, condition, indent) {
   if((condition.cond === 'AND' || condition.cond === 'OR') && condition.children) {
     let st = `(\n`;
     const children = condition.children.filter(isValidCondition);
@@ -44,7 +45,7 @@ function genCondition(targetTable, condition, indent) {
         st += "Q(";
       }
 
-      st += genCondition(targetTable, children[i], indent + "    ");
+      st += genCondition(targetTable, tableRoutes, children[i], indent + "    ");
 
       if(!['AND', 'OR', 'NOT'].includes(children[i].cond)) {
         st += ")";
@@ -63,7 +64,7 @@ function genCondition(targetTable, condition, indent) {
       st += '(';
     }
 
-    st += genCondition(targetTable, condition, indent + "    ");
+    st += genCondition(targetTable, tableRoutes, condition, indent + "    ");
 
     if(condition.cond !== 'AND' && condition.cond !== 'OR'){
       st += `)`;
@@ -87,30 +88,40 @@ function genCondition(targetTable, condition, indent) {
   }
   
   if(ops[condition.cond] !== undefined){
-    if(condition.tableName !== targetTable) {
-      return `${condition.tableName}__${condition.colName}${ops[condition.cond]}=${value}`
-    }else{
-      return `${condition.colName}${ops[condition.cond]}=${value}`
-    }
+    let route = tableRoutes[condition.tableName];
+    route = [...route, condition.colName];
+    return `${route.join('__')}${ops[condition.cond]}=${value}`
   }
 
   return `${condition.cond}`;
 }
 
-function genQuery(targetTable, conditionList) {
+function genQuery(targetTable, tableList, conditionList) {
+  if(!targetTable){
+    return '';
+  }
+
+  let tableRoutes = getTableRoutes(targetTable, tableList);
+
   let className = targetTable.substr(0,1).toUpperCase() + targetTable.substr(1);
   let query = 'from django.db.models import Q\n\n';
   query += `${targetTable}_list = ${className}.objects.all()\n`;
-  conditionList.forEach(condition => {
-    query += `${targetTable}_list = ${targetTable}_list.filter(${genCondition(targetTable, condition, "")})\n`
+
+  conditionList.filter(isValidCondition).forEach(condition => {
+    query += `${targetTable}_list = ${targetTable}_list.filter`;
+    if(!["AND", "OR"].includes(condition.cond)) query += '(';
+    query +=  `${genCondition(targetTable, tableRoutes, condition, "")}`;
+    if(!["AND", "OR"].includes(condition.cond)) query += ')';
+    query += '\n';
   });
+
   return query;
 }
 
 export default function CodeModal() {
   const store = useSliceStore('app');
-  const [showQueryCodeModal, targetTable, conditionList] = useSliceSelector('app', 
-        ['showQueryCodeModal', 'targetTable', 'conditionList']);
+  const [showQueryCodeModal, targetTable, tableList, conditionList] = useSliceSelector('app', 
+        ['showQueryCodeModal', 'targetTable', 'tableList', 'conditionList']);
 
 
   function hide() {
@@ -119,7 +130,7 @@ export default function CodeModal() {
     });
   }
 
-  let code = genQuery(targetTable ?? '', conditionList ?? []);
+  let code = genQuery(targetTable ?? '', tableList ?? [], conditionList ?? []);
   
   function copyToClipBoard(){
     navigator.clipboard.writeText(code);
